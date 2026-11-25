@@ -1,0 +1,7 @@
+node_modules/
+.local/
+.testmuai/
+.env*
+*.evidence
+*.har
+.DS_Store
