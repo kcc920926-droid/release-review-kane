@@ -35,7 +35,7 @@ export const cases = [
         const result = await d.mutate('restore', 'Minji', { id: 1 });
         show(d, 'Restore response', result.code);
         show(d, 'Customer notification', d.mutationMessage('restore', result));
-      }, 'Verify Restore response is 409 and Customer notification says Restore blocked because the original slot is unavailable. Verify there is no Reservation restored notification.'),
+      }, 'Verify the value beside Restore response is 409. Verify Customer notification contains the text "Restore blocked". Verify there is no Reservation restored notification.'),
       step('Reload stored reservations', async (d) => {
         const state = await d.read();
         show(d, 'Confirmed owners after reload', names(state, 'Confirmed'));

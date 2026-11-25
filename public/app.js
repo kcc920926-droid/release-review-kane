@@ -55,9 +55,14 @@ async function dashboard() {
   const content = document.querySelector('#board');
   let selected;
   let busy = false;
+  let lastView;
   async function refresh() {
     const model = required(await api('/api/board'));
-    if (!busy) render(model);
+    const view = JSON.stringify([model, selected]);
+    if (!busy && view !== lastView) {
+      render(model);
+      lastView = view;
+    }
   }
   function render(model) {
     const rows = cases.map((scenario) => {
