@@ -16,6 +16,7 @@ const discrepancyCases = new Set([3, 7, 9, 12]);
 
 function environmentFailure(result) {
   return [2, 3].includes(result.code) || !result.end || result.end.status === 'broken' ||
+    (Number(result.end.result_code) >= 500 && Number(result.end.result_code) < 700) ||
     result.end.verdict?.status === 'broken' || result.events.some(({ code }) => code === 'unresolved_variables');
 }
 
@@ -107,13 +108,14 @@ function summarizeHar(archive, files) {
       let request = {};
       try { request = JSON.parse(entry.request.postData?.text ?? '{}'); } catch { /* No JSON body. */ }
       network.push({ started: entry.startedDateTime, durationMs: entry.time, method: entry.request.method,
-        action: request.operation ?? address.pathname.split('/').at(-1), key: request.key, status: entry.response.status });
+        action: request.operation ?? address.pathname.split('/').at(-1), bookingId: request.input?.id,
+        key: request.key, status: entry.response.status });
     }
   }
   return network.sort((a, b) => Date.parse(a.started) + a.durationMs - Date.parse(b.started) - b.durationMs).slice(-25);
 }
 
-function copyEvidence(attempt, folder) {
+function copyEvidence(attempt, folder, scenario) {
   const hinted = attempt.events.findLast(({ pack }) => typeof pack === 'string')?.pack;
   const session = attempt.end?.session_dir ? join(attempt.end.session_dir, 'evidence') : null;
   const file = session && existsSync(session) ? readdirSync(session).find((name) => name.endsWith('.evidence')) : null;
@@ -130,14 +132,21 @@ function copyEvidence(attempt, folder) {
   if (bytes) writeFileSync(join(folder, 'browser.png'), bytes);
   const failureText = failure ? unpack(archive, ['-p', failure]) : undefined;
   if (failureText) writeFileSync(join(folder, 'failure.yaml'), failureText);
-  const clickStep = screenshotFile?.replace(/(?:annotated|screenshot)\.png$/, 'step.json');
   let click;
-  if (clickStep) {
-    try {
-      const metadata = JSON.parse(unpack(archive, ['-p', clickStep])?.toString() ?? '{}');
-      const coordinates = metadata.click_coordinates ?? metadata.click_point ?? metadata.click;
-      if (coordinates) click = coordinates;
-    } catch { /* An assertion step may not have pointer metadata. */ }
+  if (scenario.id === 11) {
+    const steps = names.filter((name) => name.endsWith('/step.json')).flatMap((name) => {
+      try { return [{ name, metadata: JSON.parse(unpack(archive, ['-p', name])?.toString() ?? '{}') }]; }
+      catch { return []; }
+    });
+    const pointers = steps.filter(({ metadata }) => metadata.kind === 'click').sort((a, b) => b.metadata.ordinal - a.metadata.ordinal);
+    const pointer = pointers.find(({ metadata }) => /Open reservation form/i.test(metadata.summary)) ?? pointers[0];
+    if (pointer) {
+      const { metadata } = pointer;
+      const annotated = unpack(archive, ['-p', pointer.name.replace(/step\.json$/, 'annotated.png')]);
+      if (annotated) writeFileSync(join(folder, 'pointer.png'), annotated);
+      click = { action: metadata.summary, status: metadata.status, targetBounds: metadata.element_rect ?? null,
+        coordinates: metadata.click_coordinates ?? metadata.click_point ?? null, annotated: Boolean(annotated) };
+    }
   }
   return { screenshot: Boolean(bytes), archive, click, network: summarizeHar(archive, names), failure: Boolean(failureText) };
 }
@@ -177,6 +186,18 @@ export class VerificationBoard {
 
   save() { writeJson(this.file, this.current); }
 
+  archive() {
+    const results = {};
+    const names = readdirSync(this.directory).filter((name) => /^scenario-\d+-\d+$/.test(name)).sort().reverse();
+    for (const name of names) {
+      const report = readJson(join(this.directory, name, 'report.json'), null);
+      if (!report || results[report.case] || (report.status !== 'Passed' && Number(report.resultCode) !== 740)) continue;
+      const { serverTrace, ...evidence } = report;
+      results[report.case] = evidence;
+    }
+    return results;
+  }
+
   view() {
     const results = Object.fromEntries(Object.entries(this.current.results)
       .filter(([, result]) => result.signature === this.signature));
@@ -184,7 +205,8 @@ export class VerificationBoard {
     const ready = count === cases.length && !this.running.size && digest() === this.version;
     const state = this.running.size ? 'Verification running'
       : ready ? (this.current.approval === this.signature ? 'Approved' : 'Ready for approval') : 'Needs verification';
-    return { gap: this.gap, version: this.version, results, count, ready, state, running: Boolean(this.running.size), runningCases: [...this.running] };
+    return { gap: this.gap, version: this.version, results, archive: this.archive(), count, ready, state,
+      running: Boolean(this.running.size), runningCases: [...this.running] };
   }
 
   setRule(gap) {
@@ -205,8 +227,8 @@ export class VerificationBoard {
     return this.view();
   }
 
-  screenshot(id) {
-    const path = join(this.directory, id, 'browser.png');
+  screenshot(id, kind = 'browser') {
+    const path = join(this.directory, id, kind === 'pointer' ? 'pointer.png' : 'browser.png');
     return existsSync(path) ? readFileSync(path) : null;
   }
 
@@ -282,14 +304,14 @@ export class VerificationBoard {
         writeFileSync(join(resultFolder, 'analyzer.ndjson'), analyzer.stdout);
         writeFileSync(join(resultFolder, 'analyzer.stderr'), analyzer.stderr);
       });
-      if (!environmentFailure(result) && (!analyzer || analyzer.code === 0)) break;
+      if (Number(result.end?.result_code) === 560 || (!environmentFailure(result) && (!analyzer || analyzer.code === 0))) break;
     }
     const warning = result.events.some(({ code }) => code === 'unresolved_variables');
     const end = result.end;
     const conditions = analyzer?.end?.condition_results;
     const state = run.reservations.getState();
     const comparison = compareState(scenario, end?.final_state, state);
-    const evidence = copyEvidence(result, folder);
+    const evidence = copyEvidence(result, folder, scenario);
     const passed = result.code === 0 && end?.status === 'passed' && !warning &&
       analyzer?.code === 0 && conditions?.length > 0 && conditions.every((check) => check === true) &&
       comparison.every(({ match }) => match);

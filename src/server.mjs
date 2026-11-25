@@ -121,9 +121,9 @@ export function createApplication({ data = resolve('.local'), boardEnabled = tru
       if (route.startsWith('/api/board') && board) {
         if (req.method === 'GET') {
           if (route === '/api/board') return send(res, 200, board.view());
-          const png = /^\/api\/board\/evidence\/([a-z0-9-]+)$/.exec(route)?.[1];
-          if (png) {
-            const bytes = board.screenshot(png);
+          const image = /^\/api\/board\/evidence\/([a-z0-9-]+)(\/pointer)?$/.exec(route);
+          if (image) {
+            const bytes = board.screenshot(image[1], image[2] ? 'pointer' : 'browser');
             if (bytes) {
               res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
               return res.end(bytes);

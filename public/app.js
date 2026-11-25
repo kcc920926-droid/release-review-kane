@@ -54,11 +54,12 @@ async function dashboard() {
     '<p id="page-error" class="toast error" role="status"></p><div id="board"></div>';
   const content = document.querySelector('#board');
   let selected;
+  let showingArchive = false;
   let busy = false;
   let lastView;
   async function refresh() {
     const model = required(await api('/api/board'));
-    const view = JSON.stringify([model, selected]);
+    const view = JSON.stringify([model, selected, showingArchive]);
     if (!busy && view !== lastView) {
       render(model);
       lastView = view;
@@ -71,16 +72,20 @@ async function dashboard() {
       return `<tr><td>${scenario.id}</td><td>${html(scenario.title)}</td><td>${badge(status)}</td>
         <td class="actions"><button data-action="demo" data-case="${scenario.id}">Open scenario</button>
         <button data-action="run-one" data-case="${scenario.id}" ${model.running ? 'disabled' : ''}>Run Kane</button>
-        ${report ? `<button data-action="details" data-case="${scenario.id}">Evidence</button>` : ''}</td></tr>`;
+        ${report ? `<button data-action="details" data-case="${scenario.id}">Evidence</button>` : ''}
+        ${model.archive[String(scenario.id)] && model.archive[String(scenario.id)].id !== report?.id ? `<button data-action="archive" data-case="${scenario.id}">Prior evidence</button>` : ''}</td></tr>`;
     }).join('');
-    const report = model.results[String(selected)];
+    const report = (showingArchive ? model.archive : model.results)[String(selected)];
     const evidence = report ? `<div class="stack">
+      ${showingArchive ? `<p class="subtle">Archived run · code ${html(report.signature.split(':')[0].slice(0, 8))}</p>` : ''}
       <p>${html(report.summary || report.reason)}</p>
       ${report.screenshot ? `<img class="evidence-image" src="/api/board/evidence/${html(report.id)}" alt="Kane's browser screenshot">` : ''}
       ${report.comparison?.length ? `<table><thead><tr><th>Field</th><th>Browser</th><th>Database</th></tr></thead><tbody>${report.comparison.map(({ field, observed, expected }) => `<tr><td>${html(field)}</td><td>${html(observed)}</td><td>${html(expected)}</td></tr>`).join('')}</tbody></table>` : ''}
       ${report.conditions?.length ? `<p>Browser invariants ${html(report.conditions.map((item) => item ? 'pass' : 'fail').join(' · '))}</p>` : ''}
       ${report.network?.length ? `<details><summary>Browser network evidence</summary><pre class="audit">${html(JSON.stringify(report.network, null, 2))}</pre></details>` : ''}
-      ${report.click ? `<p>Pointer evidence ${html(JSON.stringify(report.click))}</p>` : ''}
+      ${report.click ? `<details><summary>Pointer evidence</summary>
+        <pre class="audit">${html(JSON.stringify(report.click, null, 2))}</pre>
+        ${report.click.annotated ? `<img class="evidence-image" src="/api/board/evidence/${html(report.id)}/pointer" alt="Kane's highlighted browser target">` : ''}</details>` : ''}
       <p class="subtle">Local record ${html(report.id)}</p></div>` : '<p class="subtle">Choose Evidence on a completed scenario.</p>';
     content.innerHTML = `<div class="toolbar panel tool-row">
       <div><strong>Camera inspection gap</strong><div class="controls">
@@ -101,7 +106,10 @@ async function dashboard() {
         location.href = `/scenario?case=${id}&run=${run}`;
         return;
       }
-      if (action === 'details') selected = id;
+      if (action === 'details' || action === 'archive') {
+        selected = id;
+        showingArchive = action === 'archive';
+      }
       if (action === 'rule') required(await api('/api/board/rule', { gap: Number(button.dataset.gap) }));
       if (action === 'approve') required(await api('/api/board/approval', {}));
       if (action === 'run-all' || action === 'run-one') required(await api('/api/board/run', { cases: id ? [id] : undefined }));
