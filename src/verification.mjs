@@ -14,6 +14,11 @@ const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 const boardFiles = 'verification';
 const discrepancyCases = new Set([3, 7, 9, 12]);
 
+function environmentFailure(result) {
+  return [2, 3].includes(result.code) || !result.end || result.end.status === 'broken' ||
+    result.end.verdict?.status === 'broken' || result.events.some(({ code }) => code === 'unresolved_variables');
+}
+
 function readJson(file, fallback) {
   return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : fallback;
 }
@@ -258,6 +263,7 @@ export class VerificationBoard {
     let run;
     let analyzer;
     for (let retry = 0; retry < 2; retry++) {
+      analyzer = undefined;
       const created = this.createRun(scenario.id, gap);
       run = created.run;
       const address = `http://127.0.0.1:${port}/scenario?case=${scenario.id}&run=${created.id}`;
@@ -276,9 +282,7 @@ export class VerificationBoard {
         writeFileSync(join(resultFolder, 'analyzer.ndjson'), analyzer.stdout);
         writeFileSync(join(resultFolder, 'analyzer.stderr'), analyzer.stderr);
       });
-      const warning = result.events.some(({ code }) => code === 'unresolved_variables');
-      const blocked = [2, 3].includes(result.code) || result.end?.status === 'broken' || warning;
-      if (!blocked && (!analyzer || analyzer.code === 0)) break;
+      if (!environmentFailure(result) && (!analyzer || analyzer.code === 0)) break;
     }
     const warning = result.events.some(({ code }) => code === 'unresolved_variables');
     const end = result.end;
@@ -287,14 +291,16 @@ export class VerificationBoard {
     const comparison = compareState(scenario, end?.final_state, state);
     const evidence = copyEvidence(result, folder);
     const passed = result.code === 0 && end?.status === 'passed' && !warning &&
-      analyzer?.code === 0 && conditions?.length > 0 && conditions.every(Boolean) && comparison.every(({ match }) => match);
-    const setup = [2, 3].includes(result.code) || end?.status === 'broken' || warning || !end || analyzer?.code > 0;
-    const status = passed ? 'Passed' : setup ? 'Error' : 'Failed';
+      analyzer?.code === 0 && conditions?.length > 0 && conditions.every((check) => check === true) &&
+      comparison.every(({ match }) => match);
+    const confirmedDefect = Number(end?.result_code) === 740 && end.verdict?.confirmed === true && evidence.archive;
+    const setup = environmentFailure(result) || analyzer?.code > 0 || comparison.some(({ observed }) => observed === 'Not captured');
+    const status = passed ? 'Passed' : confirmedDefect || !setup ? 'Failed' : 'Error';
     const reason = end?.reason || result.stderr.trim().split('\n').at(-1) || 'Kane did not return a verdict.';
     const report = { id, case: scenario.id, signature, status, reason, summary: end?.summary,
       resultCode: end?.result_code, cliExit: result.code, conditions, comparison, ...evidence };
     writeJson(join(folder, 'report.json'), { ...report, serverTrace: run.events });
-    if (status === 'Failed') {
+    if (confirmedDefect || (status === 'Failed' && end?.verdict?.status === 'failed')) {
       const source = scenario.id === 11 ? ['public/app.js', 'public/style.css'] : ['public/app.js', 'public/cases.js', 'src/domain.mjs'];
       writeJson(join(folder, 'codex.json'), { scenario: scenario.title, objective: objective(scenario), reason,
         fields: comparison, verdict: end?.verdict, network: evidence.network, source,
