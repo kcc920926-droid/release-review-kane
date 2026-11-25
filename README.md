@@ -50,7 +50,7 @@ The `defects` tag demonstrates deliberately seeded UI regressions in cases 1, 2,
 
 Kane CLI 0.10.9 ran all 12 scenarios in Chrome against [the verified application revision](https://github.com/kcc920926-droid/release-review-kane/tree/ff28cdb2c9c44b2737e2b03fb0d5aa9aab27bd17) on November 25, 2026. Each returned `100` (pass). The release board approved the 30-minute inspection policy. Switching the policy to 0 minutes returned the board to **Needs verification**, and it rejected approval with `409`.
 
-| Case | Evidence from the seeded revision |
+| Case | Kane observation |
 | --- | --- |
 | 1 | Kane reported `740`. The server returned `409` for the restore, but the browser showed a success notification. |
 | 2 | A focused Kane run reported `740` after the browser still showed 12:00 as available under the 30-minute policy. |
@@ -58,7 +58,7 @@ Kane CLI 0.10.9 ran all 12 scenarios in Chrome against [the verified application
 | 9 | Kane reported `740` after the open confirmation targeted the wrong queue entry. The server rejected the action with `403`. [Seeded result](docs/evidence/case-09-before.png) · [Corrected result](docs/evidence/case-09-after.png) |
 | 10 | Kane reported `740` after a delayed `Waiting` response overwrote the browser's newer `Confirmed` state. |
 | 11 | Kane reported `740` when the overlay still intercepted clicks under reduced motion and the form did not open. |
-| 12 | The ownership scenario passed. The browser exposed no action on another owner's booking, the permission check returned `403`, and the confirmed booking persisted after reload. |
+| 12 | The ownership scenario passed on the verified release. The browser exposed no action on another owner's booking, the permission check returned `403`, and the confirmed booking persisted after reload. |
 
 For case 9, the correction keeps the reservation ID selected when the dialog opens. A fresh Kane run from the corrected revision returned `100`. The two captures show the same scenario and inspection policy before and after the correction.
 
