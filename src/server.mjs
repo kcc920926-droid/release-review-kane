@@ -19,11 +19,11 @@ const assets = new Map([
 ]);
 
 class DeskRun {
-  constructor(base, scenario) {
+  constructor(base, scenario, gap) {
     this.base = base;
     this.scenario = scenario;
     this.sequence = 0;
-    this.reset(0);
+    this.reset(gap);
   }
 
   reset(gap) {
@@ -100,8 +100,8 @@ export function createApplication({ data = resolve('.local'), boardEnabled = tru
     const scenario = cases.find(({ id }) => id === number);
     if (number !== 0 && !scenario) throw new Problem(404, 'Unknown scenario.');
     const id = randomUUID();
-    const run = new DeskRun(join(runPath, id), scenario, gap);
-    if (gap === 30) run.reservations.setGap(30);
+    const initialGap = [2, 4].includes(scenario?.id) ? 0 : gap;
+    const run = new DeskRun(join(runPath, id), scenario, initialGap);
     runs.set(id, run);
     return { id, run };
   };
